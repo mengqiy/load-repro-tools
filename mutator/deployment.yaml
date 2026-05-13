@@ -1,0 +1,75 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mengqiyu-configmap-mutator
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: configmap-mutator
+  namespace: mengqiyu-configmap-mutator
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: mengqiyu-configmap-mutator
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: mengqiyu-configmap-mutator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: mengqiyu-configmap-mutator
+subjects:
+- kind: ServiceAccount
+  name: configmap-mutator
+  namespace: mengqiyu-configmap-mutator
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: configmap-mutator
+  namespace: mengqiyu-configmap-mutator
+  labels:
+    app: configmap-mutator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: configmap-mutator
+  template:
+    metadata:
+      labels:
+        app: configmap-mutator
+    spec:
+      serviceAccountName: configmap-mutator
+      containers:
+      - name: configmap-mutator
+        image: 953421922360.dkr.ecr.us-west-2.amazonaws.com/mengqiyu-configmap-mutator:latest
+        imagePullPolicy: IfNotPresent
+        args:
+        - "-namespace=mengqiyu-configmap"
+        - "-qps=500"
+        - "-total=200000"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 1000m
+            memory: 512Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true

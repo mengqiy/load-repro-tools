@@ -1,0 +1,74 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mengqiyu-configmap-watchlister
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: configmap-watchlister
+  namespace: mengqiyu-configmap-watchlister
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: mengqiyu-configmap-watchlister-watchlister
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["watch", "list", "get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: mengqiyu-configmap-watchlister-watchlister
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: mengqiyu-configmap-watchlister-watchlister
+subjects:
+- kind: ServiceAccount
+  name: configmap-watchlister
+  namespace: mengqiyu-configmap-watchlister
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: configmap-watchlister
+  namespace: mengqiyu-configmap-watchlister
+  labels:
+    app: configmap-watchlister
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: configmap-watchlister
+  template:
+    metadata:
+      labels:
+        app: configmap-watchlister
+    spec:
+      serviceAccountName: configmap-watchlister
+      containers:
+      - name: configmap-watchlister
+        image: 953421922360.dkr.ecr.us-west-2.amazonaws.com/configmap-watchlister:latest
+        imagePullPolicy: IfNotPresent
+        args:
+        - "-interval=2s"
+        # - "-verbose"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 2000m
+            memory: 1024Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
