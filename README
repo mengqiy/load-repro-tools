@@ -1,0 +1,107 @@
+# load-repro-tools
+
+Tools for reproducing Kubernetes apiserver issues under heavy load. Each tool
+generates a specific traffic pattern against the apiserver using ConfigMaps as
+the target resource.
+
+## Tools
+
+### creator
+
+Bulk-creates ConfigMaps to populate the cluster with a large dataset.
+
+- Creates 200,000 ConfigMaps (~50KB each, 256 key-value pairs per ConfigMap)
+- Uses multiple clientsets and high concurrency for fast population
+- ConfigMaps are labeled with batch groups (every 10 CMs share a label)
+
+Flags:
+  -namespace       target namespace (default: mengqiyu-configmap)
+  -concurrency     number of concurrent workers (default: 500)
+  -num-clients     number of independent clientsets (default: 12)
+  -kubeconfig      path to kubeconfig
+
+Run locally:
+  go run . -namespace=mengqiyu-configmap
+
+### lister
+
+Continuously issues List requests against the apiserver at a configurable rate.
+
+- Supports label selectors to target specific subsets
+- Configurable QPS, burst, interval, and pagination limit
+- Multiple independent clients for distributed load
+
+Flags:
+  -namespace        target namespace (default: mengqiyu-configmap)
+  -label-selector   label selector (default: batch-group=group-000000)
+  -qps              queries per second (default: 2000)
+  -burst            burst allowance (default: 2000)
+  -interval         pause between list calls (default: 100ms)
+  -limit            max items per list call, 0 = no limit (default: 0)
+  -num-clients      number of independent clientsets (default: 1)
+  -kubeconfig       path to kubeconfig
+
+### mutator
+
+Continuously patches ConfigMap annotations at a steady rate to generate
+write traffic and watch events.
+
+- Round-robins through all ConfigMaps, patching an annotation with the current timestamp
+- Rate-limited to a target QPS using a token bucket
+- Graceful shutdown on SIGINT/SIGTERM
+
+Flags:
+  -namespace     target namespace (default: mengqiyu-configmap)
+  -total         number of configmaps to cycle through (default: 200000)
+  -qps           patches per second (default: 100)
+  -num-clients   number of independent clientsets (default: 10)
+  -kubeconfig    path to kubeconfig
+
+Deployable in-cluster: see mutator/deployment.yaml and mutator/Makefile.
+
+### watchlister
+
+Performs WatchList (streaming initial state via watch) against the apiserver
+repeatedly and measures throughput.
+
+- Uses SendInitialEvents=true to stream the full initial state as watch events
+- Counts events until a bookmark signals the end of the initial list
+- Reports event rate and total duration per iteration
+
+Flags:
+  -namespace     target namespace (default: mengqiyu-configmap)
+  -interval      pause between iterations (default: 2s)
+  -iterations    number of iterations, 0 = infinite (default: 0)
+  -verbose       print details for each event (default: false)
+  -kubeconfig    path to kubeconfig
+
+Deployable in-cluster: see watchlister/deployment.yaml and watchlister/Makefile.
+
+## Typical Usage
+
+1. Populate the cluster:
+     cd creator && go run . -namespace=mengqiyu-configmap
+
+2. Generate write load (mutations):
+     cd mutator && go run . -qps=500
+
+3. Generate read load (list requests):
+     cd lister && go run . -label-selector="app=configmap-test" -interval=100ms
+
+4. Stress WatchList:
+     cd watchlister && go run . -interval=2s
+
+## In-Cluster Deployment
+
+The mutator and watchlister include Dockerfiles, Makefiles, and deployment
+manifests for running inside the cluster:
+
+    cd mutator && make all   # build, push, deploy
+    cd watchlister && make all
+
+## Notes
+
+- All tools support both in-cluster config and kubeconfig for local use.
+- ConfigMaps are created in a dedicated namespace to avoid interference.
+- Adjust QPS/concurrency/num-clients to match the load profile you want to
+  reproduce.
