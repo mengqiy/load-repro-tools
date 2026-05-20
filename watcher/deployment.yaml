@@ -1,0 +1,87 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mengqiyu-configmap-watcher
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: configmap-watcher
+  namespace: mengqiyu-configmap-watcher
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: mengqiyu-configmap-watcher
+rules:
+- apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["watch", "list", "get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: mengqiyu-configmap-watcher
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: mengqiyu-configmap-watcher
+subjects:
+- kind: ServiceAccount
+  name: configmap-watcher
+  namespace: mengqiyu-configmap-watcher
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: configmap-watcher
+  namespace: mengqiyu-configmap-watcher
+  labels:
+    app: configmap-watcher
+spec:
+  # Number of pod replicas - each pod will run multiple workers
+  replicas: 15
+  selector:
+    matchLabels:
+      app: configmap-watcher
+  template:
+    metadata:
+      labels:
+        app: configmap-watcher
+    spec:
+      serviceAccountName: configmap-watcher
+      containers:
+      - name: configmap-watcher
+        # Update this with your actual image registry and tag
+        image: 953421922360.dkr.ecr.us-west-2.amazonaws.com/mengqiyu-configmap-watcher:v2
+        imagePullPolicy: IfNotPresent
+        args:
+        # Number of parallel watch workers per pod
+        # Total watch connections = replicas × workers
+        - "-workers=20"
+        # Uncomment to watch a specific namespace only
+        - "-namespace=mengqiyu-configmap"
+        # Watch timeout in seconds (watch reconnects after this duration)
+        # Lower values = more reconnection load on API server
+        - "-watch-timeout=10"
+        - "--rv-offset=1000"
+        # Increase verbosity to see watch lifecycle and events
+        # - "-v=2"  # Show watch start/stop
+        # - "-v=3"  # Show event processing details
+        - "-v=3"
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 1024Mi
+          limits:
+            cpu: 4000m
+            memory: 16000Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
